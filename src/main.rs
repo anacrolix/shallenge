@@ -1,12 +1,14 @@
 use anyhow::Result;
 use hex::ToHex;
+use itertools::Itertools;
 use num_format::*;
 use rand::{thread_rng, Rng};
 use sha2::digest::generic_array::GenericArray;
-use sha2::digest::{ OutputSizeUser};
+use sha2::digest::OutputSizeUser;
 use sha2::Digest;
 use std::io::Read;
 use std::iter;
+use std::iter::repeat;
 use std::num::NonZero;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{atomic, mpsc};
@@ -20,7 +22,7 @@ fn sample_base64_alphabet(rng: &mut impl rand::Rng) -> u8 {
 fn main() -> Result<()> {
     print_hash("seletskiy/18GHs/1xRTX4090/Hi+HackerNews/0000itHpMYmC1+2");
     let mut parallelism = std::thread::available_parallelism()?;
-    // parallelism = NonZero::new(1).unwrap();
+    // parallelism = NonZero::new(8).unwrap();
     eprintln!("parallelism is {}", parallelism);
     let (merge_sender, merge_receiver) = mpsc::channel();
     let hash_count = AtomicU64::new(0);
@@ -28,7 +30,7 @@ fn main() -> Result<()> {
         for _ in 0..parallelism.into() {
             let nonce_prefix = String::from_utf8(
                 iter::repeat_with(|| sample_base64_alphabet(&mut thread_rng()))
-                    .take(16)
+                    .take(8)
                     .collect::<Vec<u8>>(),
             )
             .unwrap();
@@ -112,48 +114,62 @@ fn explore(
     let nonce_start_index = buf.len();
     buf.extend(nonce_prefix);
     let explore_start_index = buf.len();
-    buf.extend(std::iter::repeat(b'0').take(64 - nonce_prefix.len()));
     let nonce_slice = &mut buf[nonce_start_index..];
-    assert_eq!(nonce_slice.len(), 64);
+    assert!(nonce_slice.len() < 64);
     let mut hasher = sha2::Sha256::new();
+    hasher.update(&buf[..explore_start_index]);
     let mut best: Option<Output> = None;
-    const HASH_COUNT_BATCH: u64 = 1000;
+    const HASH_COUNT_BATCH: u64 = 1_000_000;
     let mut local_hash_count = 0;
     let mut hash = Default::default();
-    explore_nonce(&mut buf, explore_start_index, &mut |slice| {
-        hasher.update(slice);
-        hasher.finalize_into_reset(&mut hash);
-        // let hash = hasher.finalize_reset();
-        local_hash_count += 1;
-        if local_hash_count % HASH_COUNT_BATCH == 0 {
-            hash_count.fetch_add(HASH_COUNT_BATCH, atomic::Ordering::Relaxed);
-        }
-        let score = consecutive_zeroes(&hash);
-        if best
-            .as_ref()
-            .map(|best| best.score >= score)
-            .unwrap_or_default()
-        {
-            return;
-        }
-        let slice_as_str = unsafe { std::str::from_utf8_unchecked(slice) };
-        let output = Output {
-            hash: hash.try_into().unwrap(),
-            input: slice_as_str.to_string(),
-            score,
-        };
-        merge.send(output.clone()).unwrap();
-        best = Some(output);
-    });
+    while buf[nonce_start_index..].len() <= 64 {
+        explore_nonce(&mut buf, explore_start_index, &mut |slice| {
+            let mut hasher = hasher.clone();
+            hasher.update(&slice[explore_start_index..]);
+            hasher.finalize_into(&mut hash);
+            // let hash = hasher.finalize_reset();
+            local_hash_count += 1;
+            if local_hash_count % HASH_COUNT_BATCH == 0 {
+                hash_count.fetch_add(HASH_COUNT_BATCH, atomic::Ordering::Relaxed);
+            }
+            let score = consecutive_zeroes(&hash);
+            if best
+                .as_ref()
+                .map(|best| best.score >= score)
+                .unwrap_or_default()
+            {
+                return;
+            }
+            let slice_as_str = unsafe { std::str::from_utf8_unchecked(slice) };
+            let output = Output {
+                hash: hash.try_into().unwrap(),
+                input: slice_as_str.to_string(),
+                score,
+            };
+            merge.send(output.clone()).unwrap();
+            best = Some(output);
+        });
+        buf.push(0);
+    }
 }
 
 fn explore_nonce(space: &mut [u8], index: usize, run: &mut impl FnMut(&[u8])) {
-    if index == space.len() {
-        run(space);
-        return;
-    }
-    for value in base64::alphabet::STANDARD.as_str().bytes() {
-        space[index] = value;
-        explore_nonce(space, index + 1, run);
+    if true {
+        if index == space.len() {
+            run(space);
+            return;
+        }
+        for value in base64::alphabet::STANDARD.as_str().bytes() {
+            space[index] = value;
+            explore_nonce(space, index + 1, run);
+        }
+    } else {
+        for suffix in repeat(base64::alphabet::STANDARD.as_str().bytes())
+            .take(space.len() - index)
+            .multi_cartesian_product()
+        {
+            space[index..].copy_from_slice(&suffix);
+            run(space)
+        }
     }
 }
