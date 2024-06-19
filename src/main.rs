@@ -26,6 +26,7 @@ fn main() -> Result<()> {
     eprintln!("parallelism is {}", parallelism);
     let (merge_sender, merge_receiver) = mpsc::channel();
     let hash_count = AtomicU64::new(0);
+    let start_instant = Instant::now();
     std::thread::scope(|scope| {
         for _ in 0..parallelism.into() {
             let nonce_prefix = String::from_utf8(
@@ -73,7 +74,13 @@ fn main() -> Result<()> {
             {
                 continue;
             }
-            println!("{:x} {} {}", output.hash, output.score, output.input);
+            println!(
+                "after {:?}:\n{:x} {} {}",
+                Instant::now().duration_since(start_instant),
+                output.hash,
+                output.score,
+                output.input
+            );
             best = Some(output);
         }
         eprintln!("finishing merging");
