@@ -1,27 +1,24 @@
 use anyhow::Result;
-use hex::ToHex;
 use itertools::Itertools;
 use num_format::*;
 use rand::{thread_rng, Rng};
 use sha2::digest::generic_array::GenericArray;
 use sha2::digest::OutputSizeUser;
 use sha2::Digest;
-use std::io::Read;
 use std::iter;
 use std::iter::repeat;
-use std::num::NonZero;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{atomic, mpsc};
 use std::time::{Duration, Instant};
 
-fn sample_base64_alphabet(rng: &mut impl rand::Rng) -> u8 {
+fn sample_base64_alphabet(rng: &mut impl Rng) -> u8 {
     let alphabet_bytes = base64::alphabet::STANDARD.as_str().as_bytes();
     alphabet_bytes[rng.gen_range(0..alphabet_bytes.len())]
 }
 
 fn main() -> Result<()> {
     print_hash("seletskiy/18GHs/1xRTX4090/Hi+HackerNews/0000itHpMYmC1+2");
-    let mut parallelism = std::thread::available_parallelism()?;
+    let parallelism = std::thread::available_parallelism()?;
     // parallelism = NonZero::new(8).unwrap();
     eprintln!("parallelism is {}", parallelism);
     let (merge_sender, merge_receiver) = mpsc::channel();
@@ -51,12 +48,14 @@ fn main() -> Result<()> {
             loop {
                 std::thread::sleep(duration);
                 duration *= 2;
-                let new_count = hash_count.load(Ordering::Relaxed);
                 let now_instant = Instant::now();
+                let new_count = hash_count.load(Ordering::Relaxed);
+                let duration = now_instant.duration_since(last_instant);
                 let hash_rate = (new_count - last_count) as f64
-                    / now_instant.duration_since(last_instant).as_secs_f64();
+                    / duration.as_secs_f64();
                 eprintln!(
-                    "{} hashes/s",
+                    "last {:?}: {} hashes/s",
+                    duration,
                     (hash_rate.ceil() as u64)
                         .to_formatted_string(&SystemLocale::default().unwrap())
                 );
@@ -69,7 +68,7 @@ fn main() -> Result<()> {
             // eprintln!("received {:?}", &output);
             if best
                 .as_ref()
-                .map(|best| output.score <= best.score)
+                .map(|best| output.hash > best.hash)
                 .unwrap_or_default()
             {
                 continue;
@@ -139,17 +138,17 @@ fn explore(
             if local_hash_count % HASH_COUNT_BATCH == 0 {
                 hash_count.fetch_add(HASH_COUNT_BATCH, atomic::Ordering::Relaxed);
             }
-            let score = consecutive_zeroes(&hash);
             if best
                 .as_ref()
-                .map(|best| best.score >= score)
+                .map(|best| best.hash < hash)
                 .unwrap_or_default()
             {
                 return;
             }
+            let score = consecutive_zeroes(&hash);
             let slice_as_str = unsafe { std::str::from_utf8_unchecked(slice) };
             let output = Output {
-                hash: hash.try_into().unwrap(),
+                hash,
                 input: slice_as_str.to_string(),
                 score,
             };
