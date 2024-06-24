@@ -18,8 +18,8 @@ fn sample_base64_alphabet(rng: &mut impl Rng) -> u8 {
 
 fn main() -> Result<()> {
     print_hash("seletskiy/18GHs/1xRTX4090/Hi+HackerNews/0000itHpMYmC1+2");
-    let parallelism = std::thread::available_parallelism()?;
-    // parallelism = NonZero::new(8).unwrap();
+    let mut parallelism = std::thread::available_parallelism()?;
+    parallelism = std::num::NonZero::new(usize::from(parallelism) - 2).unwrap();
     eprintln!("parallelism is {}", parallelism);
     let (merge_sender, merge_receiver) = mpsc::channel();
     let hash_count = AtomicU64::new(0);
@@ -51,8 +51,7 @@ fn main() -> Result<()> {
                 let now_instant = Instant::now();
                 let new_count = hash_count.load(Ordering::Relaxed);
                 let duration = now_instant.duration_since(last_instant);
-                let hash_rate = (new_count - last_count) as f64
-                    / duration.as_secs_f64();
+                let hash_rate = (new_count - last_count) as f64 / duration.as_secs_f64();
                 eprintln!(
                     "last {:?}: {} hashes/s",
                     duration,
