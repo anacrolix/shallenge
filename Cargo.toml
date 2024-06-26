@@ -4,13 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [profile.release]
-debug = true
+#debug = true
 
 [dependencies]
 anyhow = "1.0.86"
 base64 = "0.22.1"
 clap = { version = "4.5.7", features = ["derive"] }
 itertools = "0.13.0"
-num-format = { version = "0.4.4", features = ["with-system-locale"] }
+num-format = { path = "num-format/num-format", features = ["with-system-locale"] }
 rand = "0.8.5"
+
+[target.'cfg(windows)'.dependencies]
+sha2 = { version = "0.10.8", features = [] }
+
+[target.'cfg(not(windows))'.dependencies]
 sha2 = { version = "0.10.8", features = ["asm"] }
+
+[features]
+sha2-asm = ["sha2/asm"]

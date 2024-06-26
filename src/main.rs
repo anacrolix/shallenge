@@ -17,9 +17,9 @@ fn sample_base64_alphabet(rng: &mut impl Rng) -> u8 {
 }
 
 fn main() -> Result<()> {
-    print_hash("seletskiy/18GHs/1xRTX4090/Hi+HackerNews/0000itHpMYmC1+2");
+    // print_hash("seletskiy/18GHs/1xRTX4090/Hi+HackerNews/0000itHpMYmC1+2");
     let mut parallelism = std::thread::available_parallelism()?;
-    parallelism = std::num::NonZero::new(usize::from(parallelism) - 2).unwrap();
+    // parallelism = std::num::NonZero::new(usize::from(parallelism) - 2).unwrap();
     eprintln!("parallelism is {}", parallelism);
     let (merge_sender, merge_receiver) = mpsc::channel();
     let hash_count = AtomicU64::new(0);
@@ -37,7 +37,12 @@ fn main() -> Result<()> {
             scope.spawn(move || {
                 eprintln!("starting worker with nonce prefix {}", nonce_prefix);
                 let nonce_prefix = nonce_prefix.as_bytes();
-                explore("anacrolix", &nonce_prefix, merge_sender, hash_count);
+                explore(
+                    "anacrolix/great+it+tyre+fire",
+                    nonce_prefix,
+                    merge_sender,
+                    hash_count,
+                );
                 eprintln!("thread ended");
             });
         }
@@ -52,11 +57,16 @@ fn main() -> Result<()> {
                 let new_count = hash_count.load(Ordering::Relaxed);
                 let duration = now_instant.duration_since(last_instant);
                 let hash_rate = (new_count - last_count) as f64 / duration.as_secs_f64();
+                let system_locale = SystemLocale::default();
+                let fallback_locale = Locale::en_AU;
+                let format: Box<dyn Format> = match system_locale {
+                    Ok(ok) => Box::new(ok),
+                    _ => Box::new(fallback_locale),
+                };
                 eprintln!(
                     "last {:?}: {} hashes/s",
                     duration,
-                    (hash_rate.ceil() as u64)
-                        .to_formatted_string(&SystemLocale::default().unwrap())
+                    (hash_rate.ceil() as u64).to_formatted_string(&*format)
                 );
                 last_count = new_count;
                 last_instant = now_instant;
@@ -84,13 +94,6 @@ fn main() -> Result<()> {
         eprintln!("finishing merging");
     });
     Ok(())
-}
-
-fn print_hash(data: impl AsRef<[u8]>) {
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(data);
-    let result = hasher.finalize();
-    println!("{:x}", result);
 }
 
 #[derive(Debug, Clone)]
